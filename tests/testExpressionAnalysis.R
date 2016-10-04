@@ -36,10 +36,34 @@ testGetAllEBayes <- function(){
 	pAdj <- getAllEBayes(eset, adjust=T)
 	
 	stopifnot( mean(pAdj[,"A"]) > mean(p[,"A"]) )
+	
+	### paired desgn
+	esetNonPaired <- esetPaired
+	pData(esetNonPaired) <- pData(esetPaired)[,1:2]
+	
+	pValPaired <- getAllEBayes(esetPaired,adjust=F,method=c("all"))
+	pValPairedPairwise <- getAllEBayes(esetPaired,adjust=F,method=c("pairwise"))
+	
+	pValNonPaired <- getAllEBayes(esetNonPaired,adjust=F,method=c("all"))
+	pValNonPairedPairwise <- getAllEBayes(esetNonPaired,adjust=F,method=c("pairwise"))
+	stopifnot(all(apply(pValPaired,2,sum) < apply(pValNonPaired,2,sum)))
+	stopifnot(all(apply(pValPairedPairwise,2,sum) < apply(pValNonPairedPairwise,2,sum)))
+	
+	# adjustment filter
+	
+	adjustfilter <- data.frame(rep(T,nrow(eset)),rep(T,nrow(eset)) )
+	adjustfilter[1,1] <- F
+	adjustfilter[2,2] <- F
+		
+	pTmp <- getAllEBayes(eset,adjust=T, adjustFilter=adjustfilter)
+	stopifnot(p[1,1] == pTmp[1,1])
+	stopifnot(p[2,2] == pTmp[2,2])
+	stopifnot(is.na(pTmp[3,2]))
 	cat("--- testGetAllEBayes: PASS ALL TEST --- \n")
-	
-	print(head(p))
-	
+
+	# Question: limma multiple groups comparison produces different pvalue comparing with two group comparsion	
+	# https://support.bioconductor.org/p/44216/	
+	# https://support.bioconductor.org/p/60556/
 }
 
 testGetRatios <- function(){
@@ -52,14 +76,28 @@ testGetRatios <- function(){
 	#  C_rep_1  C_rep_2  A_rep_1  A_rep_2 
 	# 9.963852 9.966003 9.965568 9.967214 
 	
-	
 	## NOTE: C is control
-	stopifnot(all.equal(r[1,1],log2(median(exprs(eset)[1,1:2]) / median(exprs(eset)[1,5:6]))))
+	stopifnot(all.equal(r[1,1],median(log2(exprs(eset))[1,1:2]) - median(log2(exprs(eset))[1,5:6]) ) )
 	
 	stopifnot(mean(r[,"A"]) < mean(r[,"B"]))
 	stopifnot(all.equal(r,getRatios(eset,method="mean")))
 	r <- getRatios(eset)
 	stopifnot(all.equal(mean(r[,"B"]),mean(r[,"B"])))
+
+	stopifnot(all(round(apply(getRatios(esetPaired, log2=F),2,mean),1) == c(1.5,1.2)))
+	stopifnot(ncol(r)  == 2)
+	
+	rPaired <- getRatios(esetPaired, method="paired")
+	stopifnot(ncol(rPaired)  == 4)
+	stopifnot(all(	log2(exprs(esetPaired)[,1]) - log2(exprs(esetPaired)[,5]) == rPaired[,1] ))
+	stopifnot(all(	log2(exprs(esetPaired)[,4]) - log2(exprs(esetPaired)[,6]) == rPaired[,4] ))
+	stopifnot(all(	exprs(esetPaired)[,4] / exprs(esetPaired)[,6] == getRatios(esetPaired, method="paired", log2=F)[,4] ))
+	# should fail	
+	stopifnot((inherits(try(	getRatios(eset, method="paired"), silent = TRUE), "try-error")))
+
+	
+	stopifnot(all(round(getRatios(esetPaired)[,1],2) ==  round(apply(rPaired[,1:2],1,median),2)))
+	
 	
 	cat("--- testGetRatios: PASS ALL TEST --- \n")
 	
@@ -74,6 +112,11 @@ testGetAllCV <- function(){
 	stopifnot(all.equal(cv[1,"A"] , (sd(exprs(eset)[1,unlist(pData(eset)$condition == "A")]) / mean(exprs(eset)[1,unlist(pData(eset)$condition == "A")]))))
 	stopifnot(all.equal(cv[200,"C"] , sd(exprs(eset)[200,unlist(pData(eset)$condition == "C")]) / mean(exprs(eset)[200,unlist(pData(eset)$condition == "C")])))
 	
+	cvPaired <-  getAllCV(esetPaired)
+	stopifnot(all(is.na(cvPaired[,1])))
+	stopifnot(all(!is.na(cvPaired[,2])))
+	stopifnot(cvPaired[3,"A"] ==  (sd(exprs(esetPaired)[3,1:2] / exprs(esetPaired)[3,5:6]) /	mean(exprs(esetPaired)[3,1:2] / exprs(esetPaired)[3,5:6])))
+	
 	cat("--- testGetAllCV: PASS ALL TEST --- \n")
 }
 
@@ -81,7 +124,7 @@ testGlobalNormalize <- function(){
 	
 	cat("--- testGlobalNormalize: --- \n")
 	
-	globalNormFactors <- getGlobalNormFactors(eset)
+	globalNormFactors <- getGlobalNormFactors(eset,method="sum")
 	### add normalization factors to ExpressionSet
 	pData(eset) <- cbind(pData(eset),globalNormFactors)
 	esetNorm <- globalNormalize(eset,globalNormFactors)
@@ -104,6 +147,7 @@ testGetSignalPerCondition <- function(){
 	cat("--- testGetSignalPerCondition: --- \n")
 	stopifnot(sum(getSignalPerCondition(eset,method="min")[,"A"] <= getSignalPerCondition(eset,method="max")[,"A"]) == nrow(eset))
 	stopifnot(sum(getSignalPerCondition(eset,method="min")[,"C"] <= getSignalPerCondition(eset,method="median")[,"C"]) == nrow(eset))
+	stopifnot(getSignalPerCondition(eset,method="sd")[1,2] == sd(exprs(eset)[1,3:4]))
 	cat("--- testGetSignalPerCondition: PASS ALL TEST --- \n")
 }
 
@@ -142,7 +186,7 @@ testRollUp <- function(){
 	rollUpEset3 <- rollUp(eset[!fData(eset)$isFiltered,] ,featureDataColumnName= c("ptm"), method=c("mean"))
 	stopifnot( length( unique( fData(eset)$ptm ) ) == nrow(rollUpEset3)) 
 	
-	print(exprs(rollUpEset2))
+	#print(exprs(rollUpEset2))
 	
 	stopifnot(all.equal(sum(exprs(rollUpEset2)),sum(exprs(rollUpEset1)))) ### test sum
 	stopifnot(sum(exprs(rollUpEset1)) != sum(exprs(rollUpEset3))) ### test mean
@@ -340,27 +384,47 @@ testGetMaxIndex <-function(){
 	
 }
 
+testCreatePairedExpDesign <- function(){
+	
+	cat(" --- testCreatePairedExpDesign:  --- \n")
+	stopifnot(all( pData(createPairedExpDesign(eset))$subject == as.factor(rep(1:2,3))))
+	stopifnot((inherits(try(createPairedExpDesign(eset[,1:3]), silent = TRUE), "try-error")))
+	stopifnot((inherits(try(createPairedExpDesign(eset[,1:4]), silent = TRUE), "ExpressionSet")))
+	cat(" --- testCreatePairedExpDesign: PASS ALL TEST  --- \n")
+	
+}
+
 ### TEST FUNCTIONS END
 
-### TESTS
-testCreateExpressionDataset()
-testGetAllEBayes()
-testGetRatios()
-testGetAllCV()
-testGlobalNormalize()
+#### TESTS
+#testGetRatios()
+#testGetAllEBayes()
+#testGetSignalPerCondition()
+#testGetRatios()
+
+if(T){
+	testCreateExpressionDataset()
+	testGetAllEBayes()
+	testGetRatios()
+	testGetAllCV()
+	testGlobalNormalize()
 #testNormalise()
-testRtNormalize()
-testGetSignalPerCondition()
-testBaselineIntensity()
-testRollUp()
-testTopX()
+	testRtNormalize()
 
-testGetLoocvFoldError()
-
-testRemoveOutliers()
-testPerFeatureNormalization()
-testStandardise()
-testGetMaxIndex()
-
-testGetIBAQEset()
+	testBaselineIntensity()
+	testRollUp()
+	testTopX()
+	
+	testGetLoocvFoldError()
+	
+	testRemoveOutliers()
+	testPerFeatureNormalization()
+	testStandardise()
+	testGetMaxIndex()
+	
+	testGetIBAQEset()
+	
+	testCreatePairedExpDesign()
+	
+}
 
