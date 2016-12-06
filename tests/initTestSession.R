@@ -27,9 +27,6 @@ if(!grepl("SafeQuant\\.Rcheck",getwd())){ # DEV mode
 	source(paste(sqRootDir,"/R/TMT.R",collapse="",sep=""))
 	source(paste(sqRootDir,"/R/UserOptions.R",collapse="",sep=""))
 	
-	source(paste(sqRootDir,"/R/Targeted.R",collapse="",sep=""))
-	
-	
 }else{ # CHECK mode
 	### wd already set to tests when running CHECK
 	library(SafeQuant)
@@ -168,7 +165,8 @@ tmtTestData10Plex <- matrix(rep(10,100),ncol=10)
 
 esetCalibMix <- parseScaffoldRawFile(file=scaffoldTmt10PlexCalibMixRawTestFile
 	,expDesign=data.frame(condition=paste("Condition",c(1,2,3,1,2,3,1,2,3,1),sep=""),isControl=c(T,F,F,T,F,F,T,F,F,T) ))
-esetCalibMixPair <- .getCalibMixPairedEset(.getCalibMixEset(esetCalibMix))
+
+#esetCalibMixPair <- .getCalibMixPairedEset(.getCalibMixEset(esetCalibMix))
 
 ### CREATE TEST DATA END
 
